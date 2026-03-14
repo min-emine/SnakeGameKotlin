@@ -7,7 +7,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Android Studio artık SnakeView'ı tanıyacak
+
         val oyunEkrani = SnakeView(this)
         setContentView(oyunEkrani)
     }

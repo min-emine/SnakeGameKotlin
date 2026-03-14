@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PointF
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
@@ -12,20 +13,16 @@ import kotlin.random.Random
 
 class SnakeView(context: Context) : View(context) {
 
-    // Visuals
     private val headPaint = Paint().apply { color = Color.RED }
+    private val bodyPaint = Paint().apply { color = Color.parseColor("#FF6666") }
     private val foodPaint = Paint().apply { color = Color.GREEN }
 
-    // Snake and Grid Props
-    private var headX = 100f
-    private var headY = 100f
     private val blockSize = 50f
 
-    // Food Props
-    private var foodX = 0f
-    private var foodY = 0f
 
-    // Game Engine Props
+    private val snakeBody = mutableListOf<PointF>()
+
+    private var food = PointF()
     private var isRunning = false
     private var currentDirection = "RIGHT"
     private val gameTickDelay = 150L
@@ -42,7 +39,11 @@ class SnakeView(context: Context) : View(context) {
     }
 
     init {
-        // Delaying start slightly to ensure view dimensions are measured
+
+        snakeBody.add(PointF(200f, 200f))
+        snakeBody.add(PointF(150f, 200f))
+        snakeBody.add(PointF(100f, 200f))
+
         postDelayed({ spawnFood(); resumeGame() }, 500)
     }
 
@@ -50,51 +51,82 @@ class SnakeView(context: Context) : View(context) {
         super.onDraw(canvas)
         canvas.drawColor(Color.BLACK)
 
-        // Render Food
-        canvas.drawRect(foodX, foodY, foodX + blockSize, foodY + blockSize, foodPaint)
 
-        // Render Snake Head
-        canvas.drawRect(headX, headY, headX + blockSize, headY + blockSize, headPaint)
+        canvas.drawRect(food.x, food.y, food.x + blockSize, food.y + blockSize, foodPaint)
+
+
+        for (i in snakeBody.indices) {
+            val paint = if (i == 0) headPaint else bodyPaint
+            canvas.drawRect(
+                snakeBody[i].x,
+                snakeBody[i].y,
+                snakeBody[i].x + blockSize,
+                snakeBody[i].y + blockSize,
+                paint
+            )
+        }
     }
 
     private fun updateGameLogic() {
-        // 1. Move the snake
+        val head = snakeBody[0]
+        val newHead = PointF(head.x, head.y)
+
+
         when (currentDirection) {
-            "RIGHT" -> headX += blockSize
-            "LEFT"  -> headX -= blockSize
-            "UP"    -> headY -= blockSize
-            "DOWN"  -> headY += blockSize
+            "RIGHT" -> newHead.x += blockSize
+            "LEFT"  -> newHead.x -= blockSize
+            "UP"    -> newHead.y -= blockSize
+            "DOWN"  -> newHead.y += blockSize
         }
 
-        // 2. Boundary Check (Collision with walls)
-        if (headX < 0 || headX >= width || headY < 0 || headY >= height) {
+
+        if (checkCollision(newHead)) {
             resetGame()
+            return
         }
 
-        // 3. Food Check (Collision with food)
-        if (headX == foodX && headY == foodY) {
+
+        snakeBody.add(0, newHead)
+
+
+        if (newHead.x == food.x && newHead.y == food.y) {
             spawnFood()
-            // We'll add tail-growing logic in the next step!
+
+        } else {
+
+            snakeBody.removeAt(snakeBody.size - 1)
         }
+    }
+
+    private fun checkCollision(point: PointF): Boolean {
+
+        if (point.x < 0 || point.x >= width || point.y < 0 || point.y >= height) return true
+
+
+        for (part in snakeBody) {
+            if (point.x == part.x && point.y == part.y) return true
+        }
+        return false
     }
 
     private fun spawnFood() {
-        // Calculate random position aligned to the grid
         val columns = (width / blockSize).toInt().coerceAtLeast(1)
         val rows = (height / blockSize).toInt().coerceAtLeast(1)
-
-        foodX = Random.nextInt(columns).toFloat() * blockSize
-        foodY = Random.nextInt(rows).toFloat() * blockSize
+        food.x = Random.nextInt(columns).toFloat() * blockSize
+        food.y = Random.nextInt(rows).toFloat() * blockSize
     }
 
     private fun resetGame() {
-        headX = 100f
-        headY = 100f
+        snakeBody.clear()
+        snakeBody.add(PointF(200f, 200f))
+        snakeBody.add(PointF(150f, 200f))
+        snakeBody.add(PointF(100f, 200f))
         currentDirection = "RIGHT"
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_DOWN) {
+
             currentDirection = when (currentDirection) {
                 "RIGHT" -> "DOWN"
                 "DOWN"  -> "LEFT"
