@@ -4,47 +4,78 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
 
 class SnakeView(context: Context) : View(context) {
 
-    // Çizim araçlarımız (Fırçalarımız)
-    private val kafaBoyasi = Paint().apply { color = Color.RED }
+    private val headPaint = Paint().apply { color = Color.RED }
 
-    // Yılanın başlangıç konumu ve hızı
-    var kafaX = 100f
-    var kafaY = 100f
-    val kareBoyutu = 50f
+    private var headX = 100f
+    private var headY = 100f
+    private val blockSize = 50f
 
-    // Ekran her çizildiğinde ne görüneceğini belirler
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
+    // Game state
+    private var isRunning = false
+    private var currentDirection = "RIGHT"
+    private val gameTickDelay = 150L // Speed: 150ms per move
 
-        // 1. Arka planı siyaha boya
-        canvas.drawColor(Color.BLACK)
+    private val gameHandler = Handler(Looper.getMainLooper())
 
-        // 2. Yılanın kafasını (kırmızı kare) çiz
-        canvas.drawRect(
-            kafaX,
-            kafaY,
-            kafaX + kareBoyutu,
-            kafaY + kareBoyutu,
-            kafaBoyasi
-        )
+    // The "Heartbeat" of the game
+    private val gameRunnable = object : Runnable {
+        override fun run() {
+            if (isRunning) {
+                updatePosition()
+                invalidate() // Redraw the screen
+                gameHandler.postDelayed(this, gameTickDelay)
+            }
+        }
     }
 
-    // Ekrana dokunma olaylarını yönetir
+    init {
+        // Start the game loop automatically when the view is created
+        resumeGame()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        canvas.drawColor(Color.BLACK)
+        canvas.drawRect(headX, headY, headX + blockSize, headY + blockSize, headPaint)
+    }
+
+    private fun updatePosition() {
+        when (currentDirection) {
+            "RIGHT" -> headX += blockSize
+            "LEFT"  -> headX -= blockSize
+            "UP"    -> headY -= blockSize
+            "DOWN"  -> headY += blockSize
+        }
+    }
+
+    // Temporary control: Change direction on touch for testing
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Parmağını ekrana bastığın (ACTION_DOWN) anı yakala
         if (event.action == MotionEvent.ACTION_DOWN) {
-
-            // X koordinatını kare boyutu kadar artır (Sağa git)
-            kafaX += kareBoyutu
-
-            // "Ekran değişti, gel yeniden çiz" komutu
-            invalidate()
+            // Cycle direction just to see it work
+            currentDirection = when (currentDirection) {
+                "RIGHT" -> "DOWN"
+                "DOWN"  -> "LEFT"
+                "LEFT"  -> "UP"
+                else    -> "RIGHT"
+            }
         }
         return true
+    }
+
+    fun resumeGame() {
+        isRunning = true
+        gameHandler.post(gameRunnable)
+    }
+
+    fun pauseGame() {
+        isRunning = false
+        gameHandler.removeCallbacks(gameRunnable)
     }
 }
