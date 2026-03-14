@@ -32,6 +32,7 @@ class SnakeView(context: Context) : View(context) {
         color = Color.BLACK
         textAlign = Paint.Align.CENTER
     }
+    private val heartPaint = Paint().apply { color = Color.parseColor("#800000") }
 
     private val backgroundColor = Color.parseColor("#90B175")
     private val blockSize = 50f
@@ -39,8 +40,10 @@ class SnakeView(context: Context) : View(context) {
     private var food = PointF()
     private var score = 0
     private var highScore = 0
+    private var lives = 3
+    private var currentDelay = 150L
+    private var isBlinking = false
     private var currentDirection = "DOWN"
-    private val gameTickDelay = 150L
     private val gameHandler = Handler(Looper.getMainLooper())
 
     private val prefs = context.getSharedPreferences("snake_prefs", Context.MODE_PRIVATE)
@@ -57,7 +60,7 @@ class SnakeView(context: Context) : View(context) {
             if (currentState == GameState.PLAYING) {
                 updateGameLogic()
                 invalidate()
-                gameHandler.postDelayed(this, gameTickDelay)
+                gameHandler.postDelayed(this, currentDelay)
             }
         }
     }
@@ -122,14 +125,35 @@ class SnakeView(context: Context) : View(context) {
         canvas.drawRect(food.x + miniSize * 2, food.y + miniSize, food.x + blockSize, food.y + miniSize * 2, foodPaint)
         canvas.drawRect(food.x + miniSize, food.y + miniSize * 2, food.x + miniSize * 2, food.y + blockSize, foodPaint)
 
-        for (part in snakeBody) {
-            canvas.drawRect(part.x, part.y, part.x + blockSize, part.y + blockSize, snakePaint)
+        val shouldDrawSnake = !isBlinking || (System.currentTimeMillis() / 150) % 2 == 0L
+        if (shouldDrawSnake) {
+            for (part in snakeBody) {
+                canvas.drawRect(part.x, part.y, part.x + blockSize, part.y + blockSize, snakePaint)
+            }
         }
 
         textPaint.textSize = width * 0.06f
         textPaint.textAlign = Paint.Align.LEFT
         canvas.drawText("$score", width * 0.05f, height * 0.08f, textPaint)
+
+        val heartPixelSize = width * 0.012f
+        val startX = width - (width * 0.05f) - (heartPixelSize * 5)
+        val startY = height * 0.05f
+
+        for (i in 0 until lives) {
+            val hx = startX - (i * heartPixelSize * 7)
+            drawHeart(canvas, hx, startY, heartPixelSize)
+        }
+
         textPaint.textAlign = Paint.Align.CENTER
+    }
+
+    private fun drawHeart(canvas: Canvas, x: Float, y: Float, p: Float) {
+        canvas.drawRect(x + p, y, x + p * 2, y + p, heartPaint)
+        canvas.drawRect(x + p * 3, y, x + p * 4, y + p, heartPaint)
+        canvas.drawRect(x, y + p, x + p * 5, y + p * 2, heartPaint)
+        canvas.drawRect(x + p, y + p * 2, x + p * 4, y + p * 3, heartPaint)
+        canvas.drawRect(x + p * 2, y + p * 3, x + p * 3, y + p * 4, heartPaint)
     }
 
     private fun drawGameOver(canvas: Canvas) {
@@ -162,7 +186,16 @@ class SnakeView(context: Context) : View(context) {
         }
 
         if (checkCollision(newHead)) {
-            handleGameOver()
+            lives--
+            soundPool.play(gameOverSoundId, 1f, 1f, 0, 0, 1f)
+
+            if (lives <= 0) {
+                currentState = GameState.GAME_OVER
+            } else {
+                spawnSnake()
+                isBlinking = true
+                gameHandler.postDelayed({ isBlinking = false }, 1500)
+            }
             return
         }
 
@@ -170,6 +203,8 @@ class SnakeView(context: Context) : View(context) {
 
         if (newHead.x == food.x && newHead.y == food.y) {
             score += 1
+            currentDelay = (currentDelay - 3L).coerceAtLeast(50L)
+
             if (score > highScore) {
                 highScore = score
                 prefs.edit().putInt("high_score", highScore).apply()
@@ -189,11 +224,6 @@ class SnakeView(context: Context) : View(context) {
         return false
     }
 
-    private fun handleGameOver() {
-        currentState = GameState.GAME_OVER
-        soundPool.play(gameOverSoundId, 1f, 1f, 0, 0, 1f)
-    }
-
     private fun spawnFood() {
         val columns = (width / blockSize).toInt().coerceAtLeast(1)
         val rows = (height / blockSize).toInt().coerceAtLeast(1)
@@ -201,13 +231,20 @@ class SnakeView(context: Context) : View(context) {
         food.y = Random.nextInt(rows).toFloat() * blockSize
     }
 
-    private fun resetGame() {
-        score = 0
+    private fun spawnSnake() {
         snakeBody.clear()
         snakeBody.add(PointF(300f, 150f))
         snakeBody.add(PointF(300f, 100f))
         snakeBody.add(PointF(300f, 50f))
         currentDirection = "DOWN"
+    }
+
+    private fun resetGame() {
+        score = 0
+        lives = 3
+        currentDelay = 150L
+        isBlinking = false
+        spawnSnake()
         spawnFood()
         currentState = GameState.PLAYING
         gameHandler.post(gameRunnable)
