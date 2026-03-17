@@ -18,13 +18,14 @@ import kotlin.random.Random
 
 class SnakeView(context: Context) : View(context) {
 
-    enum class GameState { MENU, PLAYING, GAME_OVER }
+    enum class GameState { MENU, PLAYING, PAUSED, GAME_OVER }
     enum class ControlType { TAP, SWIPE }
     enum class Language { TR, EN }
 
     private var currentState = GameState.MENU
     private var controlType = ControlType.TAP
     private var currentLanguage = Language.TR
+    private var isMuted = false
 
     private val snakePaint = Paint().apply { color = Color.BLACK }
     private val foodPaint = Paint().apply { color = Color.BLACK }
@@ -34,6 +35,7 @@ class SnakeView(context: Context) : View(context) {
     }
     private val heartPaint = Paint().apply { color = Color.parseColor("#800000") }
     private val obstaclePaint = Paint().apply { color = Color.parseColor("#3E4A35") }
+    private val overlayPaint = Paint().apply { color = Color.parseColor("#A0000000") }
 
     private val backgroundColor = Color.parseColor("#90B175")
     private val blockSize = 50f
@@ -57,6 +59,8 @@ class SnakeView(context: Context) : View(context) {
 
     private var touchStartX = 0f
     private var touchStartY = 0f
+
+    private var pauseIconRect = android.graphics.RectF()
 
     private val gameRunnable = object : Runnable {
         override fun run() {
@@ -99,6 +103,7 @@ class SnakeView(context: Context) : View(context) {
         when (currentState) {
             GameState.MENU -> drawMenu(canvas)
             GameState.PLAYING -> drawGame(canvas)
+            GameState.PAUSED -> drawPaused(canvas)
             GameState.GAME_OVER -> drawGameOver(canvas)
         }
     }
@@ -115,9 +120,16 @@ class SnakeView(context: Context) : View(context) {
         val controlText = if (currentLanguage == Language.TR) "KONTROL: ${if (controlType == ControlType.TAP) "DOKUN" else "KAYDIR"}" else "CONTROL: ${controlType.name}"
         val langText = if (currentLanguage == Language.TR) "DIL: TURKCE" else "LANG: ENGLISH"
 
+        val soundText = if (currentLanguage == Language.TR) {
+            "SES: ${if (isMuted) "KAPALI" else "ACIK"}"
+        } else {
+            "SOUND: ${if (isMuted) "OFF" else "ON"}"
+        }
+
         canvas.drawText(startText, cx, cy, textPaint)
         canvas.drawText(controlText, cx, cy + (height * 0.08f), textPaint)
         canvas.drawText(langText, cx, cy + (height * 0.16f), textPaint)
+        canvas.drawText(soundText, cx, cy + (height * 0.24f), textPaint)
     }
 
     private fun drawGame(canvas: Canvas) {
@@ -148,7 +160,7 @@ class SnakeView(context: Context) : View(context) {
         val levelText = "LVL:$currentLevel"
 
         canvas.drawText(scoreText, width * 0.05f, height * 0.07f, textPaint)
-        canvas.drawText(levelText, width * 0.40f, height * 0.07f, textPaint)
+        canvas.drawText(levelText, width * 0.35f, height * 0.07f, textPaint)
 
         val heartPixelSize = width * 0.012f
         val startX = width - (width * 0.05f) - (heartPixelSize * 5)
@@ -159,7 +171,34 @@ class SnakeView(context: Context) : View(context) {
             drawHeart(canvas, hx, startY, heartPixelSize)
         }
 
+        val pauseWidth = width * 0.015f
+        val pauseHeight = height * 0.03f
+        val pauseX = width - (width * 0.05f) - (pauseWidth * 3)
+        val pauseY = height * 0.08f
+
+        pauseIconRect.set(pauseX - 20f, pauseY - 20f, pauseX + pauseWidth * 4 + 20f, pauseY + pauseHeight + 20f)
+
+        canvas.drawRect(pauseX, pauseY, pauseX + pauseWidth, pauseY + pauseHeight, textPaint)
+        canvas.drawRect(pauseX + pauseWidth * 2, pauseY, pauseX + pauseWidth * 3, pauseY + pauseHeight, textPaint)
+
         textPaint.textAlign = Paint.Align.CENTER
+    }
+
+    private fun drawPaused(canvas: Canvas) {
+        drawGame(canvas)
+
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), overlayPaint)
+
+        textPaint.color = backgroundColor
+        textPaint.textSize = width * 0.08f
+        val pauseMsg = if (currentLanguage == Language.TR) "DURAKLATILDI" else "PAUSED"
+        canvas.drawText(pauseMsg, width / 2f, height / 2f, textPaint)
+
+        textPaint.textSize = width * 0.04f
+        val resumeMsg = if (currentLanguage == Language.TR) "> DOKUN VE DEVAM ET <" else "> TAP TO RESUME <"
+        canvas.drawText(resumeMsg, width / 2f, height / 2f + (height * 0.08f), textPaint)
+
+        textPaint.color = Color.BLACK
     }
 
     private fun drawHeart(canvas: Canvas, x: Float, y: Float, p: Float) {
@@ -188,6 +227,12 @@ class SnakeView(context: Context) : View(context) {
         canvas.drawText(tapText, cx, cy + (height * 0.22f), textPaint)
     }
 
+    private fun playSound(soundId: Int) {
+        if (!isMuted) {
+            soundPool.play(soundId, 1f, 1f, 0, 0, 1f)
+        }
+    }
+
     private fun updateGameLogic() {
         val head = snakeBody[0]
         val newHead = PointF(head.x, head.y)
@@ -201,7 +246,7 @@ class SnakeView(context: Context) : View(context) {
 
         if (checkCollision(newHead)) {
             lives--
-            soundPool.play(gameOverSoundId, 1f, 1f, 0, 0, 1f)
+            playSound(gameOverSoundId)
 
             if (lives <= 0) {
                 currentState = GameState.GAME_OVER
@@ -215,7 +260,6 @@ class SnakeView(context: Context) : View(context) {
 
         snakeBody.add(0, newHead)
 
-        // Yem Yeme Kontrolü
         if (newHead.x == food.x && newHead.y == food.y) {
             score += 1
             currentDelay = (currentDelay - 2L).coerceAtLeast(50L)
@@ -224,7 +268,7 @@ class SnakeView(context: Context) : View(context) {
                 highScore = score
                 prefs.edit().putInt("high_score", highScore).apply()
             }
-            soundPool.play(eatSoundId, 1f, 1f, 0, 0, 1f)
+            playSound(eatSoundId)
 
             if (score > 0 && score % 5 == 0) {
                 currentLevel++
@@ -239,15 +283,12 @@ class SnakeView(context: Context) : View(context) {
 
     private fun checkCollision(point: PointF): Boolean {
         if (point.x < 0 || point.x >= width || point.y < 0 || point.y >= height) return true
-
         for (part in snakeBody) {
             if (point.x == part.x && point.y == part.y) return true
         }
-
         for (obs in obstacles) {
             if (point.x == obs.x && point.y == obs.y) return true
         }
-
         return false
     }
 
@@ -257,7 +298,6 @@ class SnakeView(context: Context) : View(context) {
 
         val columns = (width / blockSize).toInt().coerceAtLeast(1)
         val rows = (height / blockSize).toInt().coerceAtLeast(1)
-
         val obstacleCount = (currentLevel - 1) * 3
 
         for (i in 0 until obstacleCount) {
@@ -291,11 +331,9 @@ class SnakeView(context: Context) : View(context) {
             food.x = Random.nextInt(columns).toFloat() * blockSize
             food.y = Random.nextInt(rows).toFloat() * blockSize
 
-
             for (part in snakeBody) {
                 if (part.x == food.x && part.y == food.y) isSafe = false
             }
-
             for (obs in obstacles) {
                 if (obs.x == food.x && obs.y == food.y) isSafe = false
             }
@@ -327,6 +365,7 @@ class SnakeView(context: Context) : View(context) {
         when (currentState) {
             GameState.MENU -> handleMenuTouch(event)
             GameState.PLAYING -> handleGameTouch(event)
+            GameState.PAUSED -> handlePauseTouch(event)
             GameState.GAME_OVER -> handleGameOverTouch(event)
         }
         return true
@@ -345,11 +384,22 @@ class SnakeView(context: Context) : View(context) {
             } else if (y > cy + (height * 0.13f) && y < cy + (height * 0.22f)) {
                 currentLanguage = if (currentLanguage == Language.TR) Language.EN else Language.TR
                 invalidate()
+            } else if (y > cy + (height * 0.22f) && y < cy + (height * 0.30f)) {
+                isMuted = !isMuted
+                invalidate()
             }
         }
     }
 
     private fun handleGameTouch(event: MotionEvent) {
+        if (event.action == MotionEvent.ACTION_DOWN) {
+            if (pauseIconRect.contains(event.x, event.y)) {
+                currentState = GameState.PAUSED
+                invalidate()
+                return
+            }
+        }
+
         if (controlType == ControlType.TAP) {
             if (event.action == MotionEvent.ACTION_DOWN) {
                 val cx = width / 2f
@@ -384,6 +434,13 @@ class SnakeView(context: Context) : View(context) {
                     }
                 }
             }
+        }
+    }
+
+    private fun handlePauseTouch(event: MotionEvent) {
+        if (event.action == MotionEvent.ACTION_DOWN) {
+            currentState = GameState.PLAYING
+            gameHandler.post(gameRunnable)
         }
     }
 
