@@ -21,27 +21,33 @@ class SnakeView(context: Context) : View(context) {
     enum class GameState { MENU, PLAYING, PAUSED, GAME_OVER }
     enum class ControlType { TAP, SWIPE }
     enum class Language { TR, EN }
+    enum class Theme { CLASSIC, DESERT, NIGHT }
 
     private var currentState = GameState.MENU
     private var controlType = ControlType.TAP
     private var currentLanguage = Language.TR
+    private var currentTheme = Theme.CLASSIC
     private var isMuted = false
 
-    private val snakePaint = Paint().apply { color = Color.BLACK }
-    private val foodPaint = Paint().apply { color = Color.BLACK }
-    private val textPaint = Paint().apply {
-        color = Color.BLACK
-        textAlign = Paint.Align.CENTER
-    }
+    private val snakePaint = Paint()
+    private val foodPaint = Paint()
+    private val textPaint = Paint().apply { textAlign = Paint.Align.CENTER }
     private val heartPaint = Paint().apply { color = Color.parseColor("#800000") }
-    private val obstaclePaint = Paint().apply { color = Color.parseColor("#3E4A35") }
+    private val obstaclePaint = Paint()
+    private val lightBrickPaint = Paint()
     private val overlayPaint = Paint().apply { color = Color.parseColor("#A0000000") }
+    private val bonusFoodPaint = Paint().apply { color = Color.parseColor("#FFD700") }
 
-    private val backgroundColor = Color.parseColor("#90B175")
+    private var backgroundColor = Color.parseColor("#90B175")
     private val blockSize = 50f
     private val snakeBody = mutableListOf<PointF>()
     private val obstacles = mutableListOf<PointF>()
+
     private var food = PointF()
+    private var bonusFood = PointF(-100f, -100f)
+    private var bonusFoodActive = false
+    private var bonusFoodTimer = 0
+
     private var score = 0
     private var highScore = 0
     private var lives = 3
@@ -94,6 +100,36 @@ class SnakeView(context: Context) : View(context) {
         gameOverSoundId = soundPool.load(context, R.raw.game_over, 1)
 
         highScore = prefs.getInt("high_score", 0)
+        applyThemeColors()
+    }
+
+    private fun applyThemeColors() {
+        when (currentTheme) {
+            Theme.CLASSIC -> {
+                backgroundColor = Color.parseColor("#90B175")
+                snakePaint.color = Color.BLACK
+                foodPaint.color = Color.BLACK
+                textPaint.color = Color.BLACK
+                obstaclePaint.color = Color.parseColor("#3E4A35")
+                lightBrickPaint.color = Color.parseColor("#4A5741")
+            }
+            Theme.DESERT -> {
+                backgroundColor = Color.parseColor("#E3CCA1")
+                snakePaint.color = Color.parseColor("#4A3B2C")
+                foodPaint.color = Color.parseColor("#4A3B2C")
+                textPaint.color = Color.parseColor("#4A3B2C")
+                obstaclePaint.color = Color.parseColor("#8B5A2B")
+                lightBrickPaint.color = Color.parseColor("#A06D3B")
+            }
+            Theme.NIGHT -> {
+                backgroundColor = Color.parseColor("#2A2A35")
+                snakePaint.color = Color.parseColor("#E0E0E0")
+                foodPaint.color = Color.parseColor("#E0E0E0")
+                textPaint.color = Color.parseColor("#E0E0E0")
+                obstaclePaint.color = Color.parseColor("#4A4A5A")
+                lightBrickPaint.color = Color.parseColor("#5A5A6A")
+            }
+        }
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -126,18 +162,24 @@ class SnakeView(context: Context) : View(context) {
             "SOUND: ${if (isMuted) "OFF" else "ON"}"
         }
 
+        val themeText = if (currentLanguage == Language.TR) {
+            "TEMA: ${currentTheme.name}"
+        } else {
+            "THEME: ${currentTheme.name}"
+        }
+
         canvas.drawText(startText, cx, cy, textPaint)
         canvas.drawText(controlText, cx, cy + (height * 0.08f), textPaint)
         canvas.drawText(langText, cx, cy + (height * 0.16f), textPaint)
         canvas.drawText(soundText, cx, cy + (height * 0.24f), textPaint)
+        canvas.drawText(themeText, cx, cy + (height * 0.32f), textPaint)
     }
 
     private fun drawGame(canvas: Canvas) {
         for (obs in obstacles) {
             canvas.drawRect(obs.x, obs.y, obs.x + blockSize, obs.y + blockSize, obstaclePaint)
             val padding = blockSize * 0.15f
-            val lightBrick = Paint().apply { color = Color.parseColor("#4A5741") }
-            canvas.drawRect(obs.x + padding, obs.y + padding, obs.x + blockSize - padding, obs.y + blockSize - padding, lightBrick)
+            canvas.drawRect(obs.x + padding, obs.y + padding, obs.x + blockSize - padding, obs.y + blockSize - padding, lightBrickPaint)
         }
 
         val miniSize = blockSize / 3f
@@ -146,6 +188,10 @@ class SnakeView(context: Context) : View(context) {
         canvas.drawRect(food.x + miniSize, food.y + miniSize, food.x + miniSize * 2, food.y + miniSize * 2, foodPaint)
         canvas.drawRect(food.x + miniSize * 2, food.y + miniSize, food.x + blockSize, food.y + miniSize * 2, foodPaint)
         canvas.drawRect(food.x + miniSize, food.y + miniSize * 2, food.x + miniSize * 2, food.y + blockSize, foodPaint)
+
+        if (bonusFoodActive && (bonusFoodTimer > 10 || (bonusFoodTimer % 2 == 0))) {
+            canvas.drawRect(bonusFood.x, bonusFood.y, bonusFood.x + blockSize, bonusFood.y + blockSize, bonusFoodPaint)
+        }
 
         val shouldDrawSnake = !isBlinking || (System.currentTimeMillis() / 150) % 2 == 0L
         if (shouldDrawSnake) {
@@ -198,7 +244,7 @@ class SnakeView(context: Context) : View(context) {
         val resumeMsg = if (currentLanguage == Language.TR) "> DOKUN VE DEVAM ET <" else "> TAP TO RESUME <"
         canvas.drawText(resumeMsg, width / 2f, height / 2f + (height * 0.08f), textPaint)
 
-        textPaint.color = Color.BLACK
+        applyThemeColors()
     }
 
     private fun drawHeart(canvas: Canvas, x: Float, y: Float, p: Float) {
@@ -260,6 +306,22 @@ class SnakeView(context: Context) : View(context) {
 
         snakeBody.add(0, newHead)
 
+        if (bonusFoodActive) {
+            bonusFoodTimer--
+            if (bonusFoodTimer <= 0) bonusFoodActive = false
+        }
+
+        if (bonusFoodActive && newHead.x == bonusFood.x && newHead.y == bonusFood.y) {
+            score += 5
+            bonusFoodActive = false
+            playSound(eatSoundId)
+
+            if (score > highScore) {
+                highScore = score
+                prefs.edit().putInt("high_score", highScore).apply()
+            }
+        }
+
         if (newHead.x == food.x && newHead.y == food.y) {
             score += 1
             currentDelay = (currentDelay - 2L).coerceAtLeast(50L)
@@ -273,6 +335,10 @@ class SnakeView(context: Context) : View(context) {
             if (score > 0 && score % 5 == 0) {
                 currentLevel++
                 generateObstacles()
+            }
+
+            if (score > 0 && score % 7 == 0 && !bonusFoodActive) {
+                spawnBonusFood()
             }
 
             spawnFood()
@@ -311,6 +377,7 @@ class SnakeView(context: Context) : View(context) {
                     if (part.x == obsPoint.x && part.y == obsPoint.y) isSafe = false
                 }
                 if (food.x == obsPoint.x && food.y == obsPoint.y) isSafe = false
+                if (bonusFoodActive && bonusFood.x == obsPoint.x && bonusFood.y == obsPoint.y) isSafe = false
 
                 if (obsPoint.x in (300f - blockSize * 2)..(300f + blockSize * 2) &&
                     obsPoint.y in (50f)..(250f + blockSize * 2)) {
@@ -337,7 +404,30 @@ class SnakeView(context: Context) : View(context) {
             for (obs in obstacles) {
                 if (obs.x == food.x && obs.y == food.y) isSafe = false
             }
+            if (bonusFoodActive && bonusFood.x == food.x && bonusFood.y == food.y) isSafe = false
         } while (!isSafe)
+    }
+
+    private fun spawnBonusFood() {
+        val columns = (width / blockSize).toInt().coerceAtLeast(1)
+        val rows = (height / blockSize).toInt().coerceAtLeast(1)
+        var isSafe: Boolean
+        do {
+            isSafe = true
+            bonusFood.x = Random.nextInt(columns).toFloat() * blockSize
+            bonusFood.y = Random.nextInt(rows).toFloat() * blockSize
+
+            for (part in snakeBody) {
+                if (part.x == bonusFood.x && part.y == bonusFood.y) isSafe = false
+            }
+            for (obs in obstacles) {
+                if (obs.x == bonusFood.x && obs.y == bonusFood.y) isSafe = false
+            }
+            if (food.x == bonusFood.x && food.y == bonusFood.y) isSafe = false
+        } while (!isSafe)
+
+        bonusFoodActive = true
+        bonusFoodTimer = 45
     }
 
     private fun spawnSnake() {
@@ -354,9 +444,11 @@ class SnakeView(context: Context) : View(context) {
         currentLevel = 1
         currentDelay = 150L
         isBlinking = false
+        bonusFoodActive = false
         obstacles.clear()
         spawnSnake()
         spawnFood()
+        applyThemeColors()
         currentState = GameState.PLAYING
         gameHandler.post(gameRunnable)
     }
@@ -386,6 +478,11 @@ class SnakeView(context: Context) : View(context) {
                 invalidate()
             } else if (y > cy + (height * 0.22f) && y < cy + (height * 0.30f)) {
                 isMuted = !isMuted
+                invalidate()
+            } else if (y > cy + (height * 0.30f) && y < cy + (height * 0.38f)) {
+                val nextOrdinal = (currentTheme.ordinal + 1) % Theme.values().size
+                currentTheme = Theme.values()[nextOrdinal]
+                applyThemeColors()
                 invalidate()
             }
         }
