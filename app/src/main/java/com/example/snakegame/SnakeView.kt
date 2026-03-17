@@ -33,14 +33,17 @@ class SnakeView(context: Context) : View(context) {
         textAlign = Paint.Align.CENTER
     }
     private val heartPaint = Paint().apply { color = Color.parseColor("#800000") }
+    private val obstaclePaint = Paint().apply { color = Color.parseColor("#3E4A35") }
 
     private val backgroundColor = Color.parseColor("#90B175")
     private val blockSize = 50f
     private val snakeBody = mutableListOf<PointF>()
+    private val obstacles = mutableListOf<PointF>()
     private var food = PointF()
     private var score = 0
     private var highScore = 0
     private var lives = 3
+    private var currentLevel = 1
     private var currentDelay = 150L
     private var isBlinking = false
     private var currentDirection = "DOWN"
@@ -118,6 +121,13 @@ class SnakeView(context: Context) : View(context) {
     }
 
     private fun drawGame(canvas: Canvas) {
+        for (obs in obstacles) {
+            canvas.drawRect(obs.x, obs.y, obs.x + blockSize, obs.y + blockSize, obstaclePaint)
+            val padding = blockSize * 0.15f
+            val lightBrick = Paint().apply { color = Color.parseColor("#4A5741") }
+            canvas.drawRect(obs.x + padding, obs.y + padding, obs.x + blockSize - padding, obs.y + blockSize - padding, lightBrick)
+        }
+
         val miniSize = blockSize / 3f
         canvas.drawRect(food.x + miniSize, food.y, food.x + miniSize * 2, food.y + miniSize, foodPaint)
         canvas.drawRect(food.x, food.y + miniSize, food.x + miniSize, food.y + miniSize * 2, foodPaint)
@@ -132,13 +142,17 @@ class SnakeView(context: Context) : View(context) {
             }
         }
 
-        textPaint.textSize = width * 0.06f
+        textPaint.textSize = width * 0.05f
         textPaint.textAlign = Paint.Align.LEFT
-        canvas.drawText("$score", width * 0.05f, height * 0.08f, textPaint)
+        val scoreText = if (currentLanguage == Language.TR) "SKOR:$score" else "SCORE:$score"
+        val levelText = "LVL:$currentLevel"
+
+        canvas.drawText(scoreText, width * 0.05f, height * 0.07f, textPaint)
+        canvas.drawText(levelText, width * 0.40f, height * 0.07f, textPaint)
 
         val heartPixelSize = width * 0.012f
         val startX = width - (width * 0.05f) - (heartPixelSize * 5)
-        val startY = height * 0.05f
+        val startY = height * 0.045f
 
         for (i in 0 until lives) {
             val hx = startX - (i * heartPixelSize * 7)
@@ -165,7 +179,7 @@ class SnakeView(context: Context) : View(context) {
         canvas.drawText(goText, cx, cy - (height * 0.1f), textPaint)
 
         textPaint.textSize = width * 0.05f
-        val scoreText = if (currentLanguage == Language.TR) "SKOR: $score" else "SCORE: $score"
+        val scoreText = if (currentLanguage == Language.TR) "SKOR: $score (LVL $currentLevel)" else "SCORE: $score (LVL $currentLevel)"
         val bestText = if (currentLanguage == Language.TR) "EN IYI: $highScore" else "BEST: $highScore"
         val tapText = if (currentLanguage == Language.TR) "> MENUYE DON <" else "> MAIN MENU <"
 
@@ -201,15 +215,22 @@ class SnakeView(context: Context) : View(context) {
 
         snakeBody.add(0, newHead)
 
+        // Yem Yeme Kontrolü
         if (newHead.x == food.x && newHead.y == food.y) {
             score += 1
-            currentDelay = (currentDelay - 3L).coerceAtLeast(50L)
+            currentDelay = (currentDelay - 2L).coerceAtLeast(50L)
 
             if (score > highScore) {
                 highScore = score
                 prefs.edit().putInt("high_score", highScore).apply()
             }
             soundPool.play(eatSoundId, 1f, 1f, 0, 0, 1f)
+
+            if (score > 0 && score % 5 == 0) {
+                currentLevel++
+                generateObstacles()
+            }
+
             spawnFood()
         } else {
             snakeBody.removeAt(snakeBody.size - 1)
@@ -218,17 +239,67 @@ class SnakeView(context: Context) : View(context) {
 
     private fun checkCollision(point: PointF): Boolean {
         if (point.x < 0 || point.x >= width || point.y < 0 || point.y >= height) return true
+
         for (part in snakeBody) {
             if (point.x == part.x && point.y == part.y) return true
         }
+
+        for (obs in obstacles) {
+            if (point.x == obs.x && point.y == obs.y) return true
+        }
+
         return false
+    }
+
+    private fun generateObstacles() {
+        obstacles.clear()
+        if (currentLevel == 1) return
+
+        val columns = (width / blockSize).toInt().coerceAtLeast(1)
+        val rows = (height / blockSize).toInt().coerceAtLeast(1)
+
+        val obstacleCount = (currentLevel - 1) * 3
+
+        for (i in 0 until obstacleCount) {
+            var obsPoint: PointF
+            var isSafe: Boolean
+            do {
+                isSafe = true
+                obsPoint = PointF(Random.nextInt(columns).toFloat() * blockSize, Random.nextInt(rows).toFloat() * blockSize)
+
+                for (part in snakeBody) {
+                    if (part.x == obsPoint.x && part.y == obsPoint.y) isSafe = false
+                }
+                if (food.x == obsPoint.x && food.y == obsPoint.y) isSafe = false
+
+                if (obsPoint.x in (300f - blockSize * 2)..(300f + blockSize * 2) &&
+                    obsPoint.y in (50f)..(250f + blockSize * 2)) {
+                    isSafe = false
+                }
+            } while (!isSafe)
+
+            obstacles.add(obsPoint)
+        }
     }
 
     private fun spawnFood() {
         val columns = (width / blockSize).toInt().coerceAtLeast(1)
         val rows = (height / blockSize).toInt().coerceAtLeast(1)
-        food.x = Random.nextInt(columns).toFloat() * blockSize
-        food.y = Random.nextInt(rows).toFloat() * blockSize
+        var isSafe: Boolean
+        do {
+            isSafe = true
+            food.x = Random.nextInt(columns).toFloat() * blockSize
+            food.y = Random.nextInt(rows).toFloat() * blockSize
+
+
+            for (part in snakeBody) {
+                if (part.x == food.x && part.y == food.y) isSafe = false
+            }
+
+            for (obs in obstacles) {
+                if (obs.x == food.x && obs.y == food.y) isSafe = false
+            }
+        } while (!isSafe)
     }
 
     private fun spawnSnake() {
@@ -242,8 +313,10 @@ class SnakeView(context: Context) : View(context) {
     private fun resetGame() {
         score = 0
         lives = 3
+        currentLevel = 1
         currentDelay = 150L
         isBlinking = false
+        obstacles.clear()
         spawnSnake()
         spawnFood()
         currentState = GameState.PLAYING
